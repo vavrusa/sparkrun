@@ -259,6 +259,84 @@ def resolve_gguf_container_path(
     return None
 
 
+def _resolve_snapshot_dir(
+    model_id: str,
+    cache_dir: str | None = None,
+    revision: str | None = None,
+) -> Path | None:
+    """Locate the snapshot directory of a cached (non-GGUF) model.
+
+    Uses the same revision preference as :func:`is_model_cached`: an explicit
+    revision resolves strictly (``refs/{rev}`` or the hash-named directory,
+    no fallback), while an unpinned model tries ``refs/main`` first and then
+    any snapshot — manually placed cache entries are common on air-gapped
+    clusters.
+    """
+    if is_gguf_model(model_id):
+        return None
+
+    cache = Path(resolve_hf_cache_home(cache_dir))
+    safe_name = model_id.replace("/", "--")
+    model_cache = cache / "hub" / f"models--{safe_name}"
+    if not model_cache.exists():
+        return None
+
+    snapshots = model_cache / "snapshots"
+    if not snapshots.exists():
+        return None
+
+    if revision:
+        snapshot_dirs = _snapshot_dirs_for_revision(model_cache, snapshots, revision)
+    else:
+        snapshot_dirs = _snapshot_dirs_for_revision(model_cache, snapshots, "main")
+        if not snapshot_dirs:
+            snapshot_dirs = [d for d in snapshots.iterdir() if d.is_dir()]
+
+    weight_patterns = ("*.safetensors", "*.bin", "*.pt", "*.gguf")
+    for snapshot_dir in snapshot_dirs:
+        # Same rule as is_model_cached: a snapshot with only config.json is a
+        # stub (e.g. a VRAM auto-detect fetch), not a servable checkpoint.
+        if any(p.is_file() for pattern in weight_patterns for p in snapshot_dir.glob(pattern)):
+            return snapshot_dir
+    return None
+
+
+def resolve_model_snapshot_container_path(
+    model_id: str,
+    cache_dir: str | None = None,
+    revision: str | None = None,
+    container_cache: str = CONTAINER_HF_CACHE,
+) -> str | None:
+    """Resolve the container-internal path to a cached model snapshot directory.
+
+    Some engines (TensorFold) take a local snapshot path rather than a Hub
+    repo id — upstream launchers build
+    ``$HF_CACHE/hub/models--<id>/snapshots/<rev>`` themselves.  The launcher
+    resolves it once, *after* distribution so a fresh download is visible,
+    and injects it as a private override — the same seam as
+    :func:`resolve_gguf_container_path`.
+
+    Args:
+        model_id: HuggingFace model identifier.
+        cache_dir: Host-side HuggingFace cache directory.
+        revision: Revision pin (``recipe.model_revision``); ``None`` prefers
+            ``refs/main`` and falls back to any snapshot with weights.
+        container_cache: Container-side cache mount point.
+
+    Returns:
+        Container-internal path to the snapshot directory, or ``None``.
+    """
+    snapshot_dir = _resolve_snapshot_dir(model_id, cache_dir, revision)
+    if snapshot_dir is None:
+        return None
+
+    cache = resolve_hf_cache_home(cache_dir)
+    host_path = str(snapshot_dir)
+    if host_path.startswith(cache):
+        return container_cache + host_path[len(cache) :]
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Cache path computation
 # ---------------------------------------------------------------------------

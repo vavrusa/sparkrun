@@ -358,6 +358,7 @@ provides solo-mode orchestration; runtimes override `run()`/`stop()`/`follow_log
 | **sglang**           | `runtimes/sglang.py`           | `SglangRuntime`          | Native distributed | `"native"` — each node runs serve with `--node-rank`                                        |
 | **llama-cpp**        | `runtimes/llama_cpp.py`        | `LlamaCppRuntime`        | Experimental RPC   | `"native/rpc"` — workers run `rpc-server`, head connects via `--rpc`                        |
 | **trtllm**           | `runtimes/trtllm.py`           | `TrtllmRuntime`          | MPI (native)       | `"native"` — sleep infinity containers + mpirun on head                                     |
+| **tensorfold**       | `runtimes/tensorfold.py`       | `TensorFoldRuntime`      | Native distributed | `"native"` — per-node `tensorfold serve --rank N`; rank 0 alone binds HTTP. Serves a snapshot *directory*, not a repo id (`wants_model_snapshot_paths`) |
 | **eugr-vllm**        | `runtimes/eugr_vllm_ray.py`    | `EugrVllmRayRuntime`     | Ray (inherited)    | Extends VllmRayRuntime with eugr container builds and mods (v1 recipe support) (deprecated) |
 
 Runtimes must implement `generate_command()` and `resolve_container()`. The `cluster_strategy()` return value determines

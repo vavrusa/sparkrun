@@ -81,7 +81,7 @@ sparkrun update --yolo     # alias for --alpha
 
 ## Highlights
 
-- **Multi-runtime** — vLLM, SGLang, llama.cpp out of the box
+- **Multi-runtime** — vLLM, SGLang, llama.cpp, TensorFold out of the box
 - **Multi-node tensor parallelism** — `--tp 2` = 2 hosts, automatic InfiniBand/RDMA detection
 - **VRAM estimation** — know if your model fits before you launch (`sparkrun show <recipe>`)
 - **Git-based recipe registries** — we publish official recipes, community recipes, and benchmarked recipes via [Spark Arena](https://spark-arena.com), plus you can add your own registries.

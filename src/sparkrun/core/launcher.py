@@ -1662,6 +1662,51 @@ def launch_inference(
                     overrides["mmproj"] = mmproj_container_path
                     logger.info("mmproj projector resolved, container path: %s", mmproj_container_path)
 
+    # Snapshot-directory resolution for engines that serve a local path rather
+    # than a Hub repo id (TensorFold).  Mirrors the GGUF resolution above: the
+    # launcher is the only component that knows the effective cache dir, and
+    # the resolve must happen after distribution so a fresh download is
+    # visible.  A runtime that opts in is expected to have added its draft
+    # model to the distribution config in prepare(); resolving a repo nobody
+    # distributed is what a fresh cache misses, so a missing snapshot is fatal
+    # here — the engine would otherwise fail at weight load with a path error
+    # far from the cause.
+    if (
+        getattr(runtime, "wants_model_snapshot_paths", lambda: False)()
+        and not dry_run
+        and not _resolved_model_path
+        and not is_gguf_model(recipe.model)
+    ):
+        from sparkrun.core.recipe import RecipeError
+        from sparkrun.models.download import resolve_model_snapshot_container_path
+
+        model_snapshot = resolve_model_snapshot_container_path(
+            recipe.model, effective_cache_dir, revision=recipe.model_revision
+        )
+        if not model_snapshot:
+            raise RecipeError(
+                "Model %r has no cached snapshot with weights under %s; it must be distributed before "
+                "the %s runtime can resolve its serve path"
+                % (recipe.model, effective_cache_dir or "<default HF cache>", runtime.runtime_name)
+            )
+        overrides["_model_snapshot_path"] = model_snapshot
+        logger.info("Model snapshot resolved, container path: %s", model_snapshot)
+
+        draft_model = recipe._effective_default("draft_model")
+        if draft_model:
+            draft_revision = recipe._effective_default("draft_model_revision")
+            draft_snapshot = resolve_model_snapshot_container_path(
+                str(draft_model), effective_cache_dir, revision=str(draft_revision) if draft_revision else None
+            )
+            if not draft_snapshot:
+                raise RecipeError(
+                    "Draft model %r has no cached snapshot with weights under %s; add it to the recipe's "
+                    "distribution or pre-fetch it before launching"
+                    % (draft_model, effective_cache_dir or "<default HF cache>")
+                )
+            overrides["_draft_snapshot_path"] = draft_snapshot
+            logger.info("Draft model snapshot resolved, container path: %s", draft_snapshot)
+
     # Generate serve command
     serve_command = runtime.generate_command(
         recipe=recipe,

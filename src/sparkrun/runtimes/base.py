@@ -582,6 +582,26 @@ class RuntimePlugin(Plugin, ABC):
         """
         return ()
 
+    def wants_model_snapshot_paths(self) -> bool:
+        """Whether the engine takes a *local snapshot path*, not a Hub repo id.
+
+        Most engines resolve ``recipe.model`` against the Hub themselves (under
+        ``HF_HUB_OFFLINE=1`` the HF cache layout answers).  TensorFold instead
+        serves ``tensorfold serve <path-to-snapshot-dir>``, so the launcher
+        must resolve ``$HF_CACHE/hub/models--<id>/snapshots/<rev>`` and inject
+        it — the same seam as the GGUF ``_gguf_model_path`` injection, which is
+        keyed on the *model format* rather than on a runtime opt-in because
+        every GGUF-consuming runtime wants it.
+
+        When ``True``, :func:`sparkrun.core.launcher.launch_inference`
+        resolves ``_model_snapshot_path`` (and ``_draft_snapshot_path`` for a
+        ``draft_model`` default) into the override layer after distribution.
+        Runtimes that opt in should also add any draft repo to
+        ``recipe.distribution_config`` in :meth:`prepare` — resolution without
+        distribution is what a fresh cache misses.
+        """
+        return False
+
     def generate_node_command(
         self,
         recipe: Recipe,
